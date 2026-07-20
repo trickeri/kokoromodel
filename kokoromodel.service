@@ -1,0 +1,14 @@
+[Unit]
+Description=kokoromodel — system-wide text-to-speech daemon (Kokoro v1.0)
+After=graphical-session.target
+
+[Service]
+Type=simple
+# Assumes the repo lives at ~/programming/Models/kokoromodel. Edit this path if not.
+ExecStart=%h/programming/Models/kokoromodel/kokoromodel.sh
+Restart=on-failure
+RestartSec=2
+# Model stays warm in VRAM. POST /park to free it; /activate reloads.
+
+[Install]
+WantedBy=default.target

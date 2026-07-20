@@ -1,0 +1,8 @@
+/venv/
+/config.env
+/backend.txt
+/models/*.onnx
+/models/*.bin
+__pycache__/
+*.wav
+/venv-torch/
