@@ -125,11 +125,12 @@ class Handler(BaseHTTPRequestHandler):
         if not text or not text.strip():
             return self._json({"error": "no text"}, 400)
 
-        align = None
+        align = words = None
         try:
             if hasattr(ENGINE, "speak_aligned"):
-                samples, sr, align = ENGINE.speak_aligned(
-                    text.strip(), voice=voice, speed=speed, lang=lang, pitch=pitch)
+                samples, sr, align, words = ENGINE.speak_aligned(
+                    text.strip(), voice=voice, speed=speed, lang=lang, pitch=pitch,
+                    with_words=True)
             else:
                 samples, sr = ENGINE.speak(text.strip(), voice=voice, speed=speed,
                                            lang=lang, pitch=pitch)
@@ -145,6 +146,11 @@ class Handler(BaseHTTPRequestHandler):
         if align:
             self.send_header("X-Kokoro-Align",
                              base64.b64encode(json.dumps(align).encode()).decode())
+        # Per-word timing (torch engine only): base64(JSON [{t,ws,s,e},...]) for
+        # word-timed captions (e.g. a speech-bubble overlay).
+        if words:
+            self.send_header("X-Kokoro-Words",
+                             base64.b64encode(json.dumps(words).encode()).decode())
         self.end_headers()
         self.wfile.write(data)
 

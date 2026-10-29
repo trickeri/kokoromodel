@@ -70,11 +70,15 @@ class KokoroTorchTTS:
 
     def _synth(self, text: str, voice: str, speed: float):
         """Run the pipeline, concatenate audio, and build a per-phoneme timeline
-        from each segment's pred_dur. Returns (samples float32, sr, align) where
-        align = [{"ph": <phoneme char>, "start": s, "end": s}, ...] in seconds."""
+        from each segment's pred_dur. Returns (samples float32, sr, align, words) where
+        align = [{"ph": <phoneme char>, "start": s, "end": s}, ...] in seconds and
+        words = [{"t": <token text>, "ws": <trailing whitespace>, "s": s, "e": s}, ...]
+        (kokoro's own per-token timestamps; s/e are None for punctuation tokens).
+        Joining t+ws over `words` reproduces the spoken text, for word-timed captions."""
         results = list(self._pipe(text, voice=voice, speed=speed))
         audios: list[np.ndarray] = []
         align: list[dict] = []
+        words: list[dict] = []
         t_off = 0.0
         for r in results:
             audio = r.audio
@@ -92,23 +96,30 @@ class KokoroTorchTTS:
                     d = pd[i + 1] / _FRAMES_PER_SEC if (i + 1) < len(pd) else 0.0
                     align.append({"ph": ph, "start": round(t, 3), "end": round(t + d, 3)})
                     t += d
+            for tk in (r.tokens or []):
+                st, et = getattr(tk, "start_ts", None), getattr(tk, "end_ts", None)
+                words.append({"t": tk.text, "ws": tk.whitespace or "",
+                              "s": None if st is None else round(t_off + st, 3),
+                              "e": None if et is None else round(t_off + et, 3)})
+            if words and not words[-1]["ws"]:
+                words[-1]["ws"] = " "            # segment boundary = word boundary
             t_off += len(a) / float(SAMPLE_RATE)
         samples = np.concatenate(audios) if audios else np.zeros(0, np.float32)
-        return samples, SAMPLE_RATE, align
+        return samples, SAMPLE_RATE, align, words
 
     def speak_aligned(self, text: str, voice: str | None = None,
                       speed: float | None = None, lang: str | None = None,
-                      pitch: float | None = None):
+                      pitch: float | None = None, with_words: bool = False):
         if not self.loaded():
             self.load()
         v = voice or self.default_voice
         s = float(speed) if speed is not None else self.default_speed
         p = float(pitch) if pitch is not None else self.default_pitch
         with self._lock:
-            samples, sr, align = self._synth(text, v, s)
+            samples, sr, align, words = self._synth(text, v, s)
         if p:
             samples = _pitch_shift(samples, sr, p)  # duration-preserving -> timings hold
-        return samples, sr, align
+        return (samples, sr, align, words) if with_words else (samples, sr, align)
 
     def speak(self, text: str, voice: str | None = None,
               speed: float | None = None, lang: str | None = None,
